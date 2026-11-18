@@ -216,6 +216,8 @@ void ConsoleHome::UpdateSelection() {
 
 void ConsoleHome::SetLibraryMode(bool library) {
 	m_games->setWrapping(library);
+	if (auto* layout = qobject_cast<QVBoxLayout*>(m_games->parentWidget()->layout()))
+		layout->setStretchFactor(m_games, library ? 1 : 0);
 	m_games->setMaximumHeight(library ? QWIDGETSIZE_MAX : 230);
 	m_games->setVerticalScrollBarPolicy(library ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
 	m_games->setFocus();
@@ -239,14 +241,14 @@ void ConsoleHome::SendKey(int key) {
 void ConsoleHome::PollController() {
 	if (m_running) return;
 	const auto pressed = m_controller->Pressed();
+	const auto previous = m_pressed;
+	m_pressed = pressed;
 	if (QApplication::applicationState() != Qt::ApplicationActive) {
-		m_pressed = pressed;
 		m_last_direction = 0;
 		return;
 	}
 	auto* active = QApplication::activeWindow();
 	if (active != this && active != m_launcher && !QApplication::activeModalWidget()) {
-		m_pressed = pressed;
 		return;
 	}
 	int direction = 0;
@@ -262,9 +264,8 @@ void ConsoleHome::PollController() {
 	for (const auto& binding: {std::pair {"Cross", Qt::Key_Return}, {"Circle", Qt::Key_Escape},
 	                           {"L1", Qt::Key_Backtab}, {"R1", Qt::Key_Tab}}) {
 		const auto name = QString::fromLatin1(binding.first);
-		if (pressed.contains(name) && !m_pressed.contains(name)) SendKey(binding.second);
+		if (pressed.contains(name) && !previous.contains(name)) SendKey(binding.second);
 	}
-	m_pressed = pressed;
 }
 
 bool ConsoleHome::eventFilter(QObject* watched, QEvent* event) {
@@ -288,6 +289,13 @@ bool ConsoleHome::eventFilter(QObject* watched, QEvent* event) {
 			return true;
 		}
 		if (key == Qt::Key_Escape) { SetLibraryMode(false); return true; }
+		if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+			if (auto* button = qobject_cast<QPushButton*>(QApplication::focusWidget());
+			    button && isAncestorOf(button)) {
+				button->click();
+				return true;
+			}
+		}
 		if ((key == Qt::Key_Return || key == Qt::Key_Enter) && m_games->hasFocus()) {
 			m_library->LaunchSelected();
 			return true;
