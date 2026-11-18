@@ -1,5 +1,6 @@
 #include "mainDialog.h"
 #include "launcherTheme.h"
+#include "consoleHome.h"
 
 #include <QApplication>
 #include <QIcon>
@@ -20,10 +21,14 @@ int main(int argc, char* argv[]) {
 	LauncherTheme::Initialize(a);
 
 	MainDialog w;
-
-	w.emit Start();
-
-	w.show();
+	if (a.arguments().contains(QStringLiteral("--desktop"))) {
+		w.emit Start();
+		w.show();
+		return QApplication::exec();
+	}
+	ConsoleHome home(&w);
+	if (a.arguments().contains(QStringLiteral("--windowed"))) home.show();
+	else home.showFullScreen();
 
 	return QApplication::exec();
 }

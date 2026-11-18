@@ -294,6 +294,12 @@ ConfigurationListWidget::ConfigurationListWidget(QWidget* parent)
 	}
 }
 
+QTreeWidget* ConfigurationListWidget::GameList() const { return m_ui->cfgs_list; }
+
+bool ConfigurationListWidget::CanLaunch() const {
+	return m_run_enabled && m_selected_item != nullptr && !m_selected_item->IsRunning();
+}
+
 ConfigurationListWidget::~ConfigurationListWidget() {
 	qDeleteAll(m_custom_infos);
 	delete m_ui;

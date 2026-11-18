@@ -74,6 +74,8 @@ public:
 	void Run(const QString& activity);
 
 	[[nodiscard]] const QString& GetInterpreter() const { return m_interpreter; }
+	ConfigurationListWidget* Library() const { return m_ui->widget; }
+	ControllerPreview* Controller() { return &m_controller_preview; }
 
 	static void WriteSettings(QSettings& s);
 	static void ReadSettings(QSettings& s);
@@ -436,6 +438,15 @@ void MainDialog::RunInterpreter(QProcess* process, const Configuration& info, bo
 	// Without a terminal, the emulator runs directly.
 	process->setProgram(interpreter);
 	process->setArguments(args);
+	if (m_console_mode) {
+		// Track the emulator itself: a persistent cmd /K would prevent returning Home.
+		if (!info.fullscreen_enabled) args << QStringLiteral("--fullscreen");
+		process->setArguments(args);
+		process->setWorkingDirectory(QFileInfo(interpreter).absolutePath());
+		process->setProcessChannelMode(QProcess::ForwardedChannels);
+		process->start();
+		return;
+	}
 #ifdef __linux__
 	QString     terminal;
 	QStringList terminal_prefix;
@@ -476,6 +487,9 @@ void MainDialog::RunInterpreter(QProcess* process, const Configuration& info, bo
 #endif
 	process->waitForFinished(100);
 }
+
+ConfigurationListWidget* MainDialog::Library() const { return m_p->Library(); }
+ControllerPreview* MainDialog::Controller() const { return m_p->Controller(); }
 
 void MainDialog::WriteSettings(QSettings& s) {
 	MainDialogPrivate::WriteSettings(s);
@@ -518,7 +532,7 @@ void MainDialogPrivate::ReadSettings(QSettings& s) {
 }
 
 void MainDialogPrivate::Run(const QString& activity) {
-	if (m_update_checker->IsInstalling()) {
+	if (m_update_checker->IsInstalling() || !m_ui->widget->CanLaunch()) {
 		return;
 	}
 	QPointer<ConfigurationItem> item = m_ui->widget->GetSelectedItem();
@@ -532,17 +546,24 @@ void MainDialogPrivate::Run(const QString& activity) {
 	m_title_sound.SetTitle({});
 
 	auto* process = new QProcess(this);
-	connect(process, &QProcess::stateChanged, this,
-	        [this, process, item](QProcess::ProcessState state) {
-		        if (state == QProcess::NotRunning) {
-			        if (item != nullptr) {
-				        item->SetRunning(false);
-			        }
-			        m_running_games--;
-			        process->deleteLater();
-			        Update();
-		        }
-	        });
+	connect(process, &QProcess::started, this, [this] {
+		emit m_main_dialog->GameRunningChanged(true);
+	});
+	const auto finish = [this, process, item]() {
+		if (process->property("launch_finalized").toBool()) return;
+		process->setProperty("launch_finalized", true);
+		if (item != nullptr) item->SetRunning(false);
+		m_running_games--;
+		Update();
+		emit m_main_dialog->GameRunningChanged(m_running_games > 0);
+		process->deleteLater();
+	};
+	connect(process, &QProcess::finished, this, [finish](int, QProcess::ExitStatus) { finish(); });
+	connect(process, &QProcess::errorOccurred, this, [this, process, finish](QProcess::ProcessError error) {
+		if (error != QProcess::FailedToStart) return;
+		finish();
+		QMessageBox::critical(m_main_dialog, tr("Launch failed"), process->errorString());
+	});
 	auto info             = m_ui->widget->CreateConfiguration(*item);
 	info->launch_activity = activity;
 	m_main_dialog->RunInterpreter(process, *info, g_close_terminal);

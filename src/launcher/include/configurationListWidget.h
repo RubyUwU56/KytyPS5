@@ -45,6 +45,11 @@ public:
 	void ScanGameDirectory();
 	void ViewTrophies();
 	void ViewTrophyOverview();
+	class QTreeWidget* GameList() const;
+	bool CanLaunch() const;
+	void LaunchSelected() { if (CanLaunch()) emit Run(); }
+	void OpenSettings() { edit_global_settings(); }
+	void OpenGameSettings() { edit_configuration(); }
 
 signals:
 
