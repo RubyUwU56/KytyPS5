@@ -155,6 +155,10 @@ template <bool async>
 bool BufferCache::DownloadBufferMemory(Buffer& buffer, uint64_t vaddr, uint64_t size) {
 	KYTY_PROFILER_BLOCK("BufferReadback::Download");
 	std::vector<vk::BufferCopy> copies;
+	if constexpr (!async) {
+		copies = std::move(m_download_copy_scratch);
+		copies.clear();
+	}
 	uint64_t                    total_size     = 0;
 	const auto                  buffer_address = buffer.CpuAddress();
 	m_memory_tracker.ForEachDownloadRange<false>(
@@ -170,6 +174,9 @@ bool BufferCache::DownloadBufferMemory(Buffer& buffer, uint64_t vaddr, uint64_t 
 		    ForgetColorMetadataChecks(address, bytes);
 	    });
 	if (copies.empty()) {
+		if constexpr (!async) {
+			m_download_copy_scratch = std::move(copies);
+		}
 		return false;
 	}
 	Common::DebugCounters::Add(Common::DebugCounters::Counter::BufferDownloadBytes, total_size);
@@ -207,13 +214,17 @@ bool BufferCache::DownloadBufferMemory(Buffer& buffer, uint64_t vaddr, uint64_t 
 	                           vk::PipelineStageFlagBits::eHost,
 	                       {}, 0, nullptr, 1, &after, 0, nullptr);
 	auto publish = [total_size, buffer_address, copies = std::move(copies),
-	                download = std::move(download)] {
+	                download = std::move(download)]() mutable {
 		KYTY_PROFILER_BLOCK("BufferReadback::Publish");
 		download.buffer->Invalidate(download.offset, total_size);
 		for (const auto& copy: copies) {
 			Libs::LibKernel::Memory::WriteBacking(
 			    buffer_address + copy.srcOffset,
 			    download.mapped + (copy.dstOffset - download.offset), copy.size);
+		}
+		if constexpr (!async) {
+			copies.clear();
+			return std::move(copies);
 		}
 	};
 	if constexpr (async) {
@@ -228,7 +239,7 @@ bool BufferCache::DownloadBufferMemory(Buffer& buffer, uint64_t vaddr, uint64_t 
 			KYTY_PROFILER_BLOCK("BufferReadback::WaitPriority");
 			m_scheduler.WaitPriorityOperations(tick);
 		}
-		publish();
+		m_download_copy_scratch = publish();
 	}
 	return true;
 }

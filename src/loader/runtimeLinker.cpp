@@ -712,6 +712,21 @@ static bool KytyExceptionHandler(const Common::HostException::ExceptionInfo& exc
 			}
 			std::printf("\n");
 		}
+		// Leaf functions can keep live locals below RSP; the ordinary stack dump omits them.
+		if (info->rsp >= 128 && IsReadableRange(info->rsp - 128, 128)) {
+			const auto* red_zone = reinterpret_cast<const uint64_t*>(info->rsp - 128);
+			std::printf("stack below rsp (rsp-128 .. rsp):");
+			for (int i = 0; i < 16; ++i) {
+				std::printf("%s %016" PRIx64, (i % 4 == 0) ? "\n " : "", red_zone[i]);
+			}
+			std::printf("\n");
+		}
+		void* frames[20] {};
+		const int depth = WalkGuestStack(info->rbp, info->rsp, frames, static_cast<int>(std::size(frames)));
+		std::printf("guest frame-pointer backtrace (%d frames, may be incomplete):\n", depth);
+		for (int i = 0; i < depth; ++i) {
+			std::printf(" [%d] %016" PRIx64 "\n", i, reinterpret_cast<uint64_t>(frames[i]));
+		}
 		std::fflush(stdout);
 	}
 	EXIT("Unhandled host exception: type=%u code=%u pc=0x%016" PRIx64

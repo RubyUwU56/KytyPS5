@@ -153,6 +153,8 @@ private:
 	StreamBuffer                                      m_staging_buffer;
 	StreamBuffer                                      m_stream_buffer;
 	StreamBuffer                                      m_download_buffer;
+	// Owned only by the GPU thread. A download takes ownership before callbacks can run.
+	std::vector<vk::BufferCopy>                        m_download_copy_scratch;
 	StreamBuffer                                      m_device_buffer;
 	TextureCache&                                     m_texture_cache;
 	uint64_t                                          m_total_used_memory  = 0;
