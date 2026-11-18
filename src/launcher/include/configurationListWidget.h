@@ -27,7 +27,11 @@ public:
 	explicit ConfigurationListWidget(QWidget* parent = nullptr);
 	~ConfigurationListWidget() override;
 
-	void SetRunEnabled(bool flag) { m_run_enabled = flag; }
+	void SetRunEnabled(bool flag) {
+		if (m_run_enabled == flag) return;
+		m_run_enabled = flag;
+		emit RunAvailabilityChanged();
+	}
 	void SetRuntimeDirectory(const QString& directory) { m_runtime_directory = directory; }
 	void SetControllerPreview(ControllerPreview* preview) { m_controller_preview = preview; }
 
@@ -55,6 +59,7 @@ signals:
 
 	void Run(const QString& activity = {});
 	void Select();
+	void RunAvailabilityChanged();
 	void PreviewControllerColor(const QString& color);
 
 protected:

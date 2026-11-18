@@ -139,6 +139,7 @@ ConsoleHome::ConsoleHome(MainDialog* launcher)
 	connect(game_settings, &QPushButton::clicked, m_library, &ConfigurationListWidget::OpenGameSettings);
 	connect(m_games, &QListView::doubleClicked, this, [this] { m_library->LaunchSelected(); });
 	connect(m_library, &ConfigurationListWidget::Select, this, [this] { UpdateSelection(); });
+	connect(m_library, &ConfigurationListWidget::RunAvailabilityChanged, this, [this] { UpdateSelection(); });
 	const auto ensure_selection = [this] {
 		QTimer::singleShot(0, this, [this] {
 			if (!m_tree->currentItem() && m_tree->topLevelItemCount() > 0)

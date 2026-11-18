@@ -562,7 +562,8 @@ void MainDialogPrivate::Run(const QString& activity) {
 	connect(process, &QProcess::errorOccurred, this, [this, process, finish](QProcess::ProcessError error) {
 		if (error != QProcess::FailedToStart) return;
 		finish();
-		QMessageBox::critical(m_main_dialog, tr("Launch failed"), process->errorString());
+		auto* parent = QApplication::activeWindow();
+		QMessageBox::critical(parent ? parent : m_main_dialog, tr("Launch failed"), process->errorString());
 	});
 	auto info             = m_ui->widget->CreateConfiguration(*item);
 	info->launch_activity = activity;

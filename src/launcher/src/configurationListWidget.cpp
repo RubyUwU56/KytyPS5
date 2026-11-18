@@ -837,7 +837,8 @@ void ConfigurationListWidget::edit_configuration() {
 	}
 
 	auto                    info = CreateConfiguration(*item);
-	ConfigurationEditDialog dlg(*info, this);
+	auto* parent = isVisible() ? window() : QApplication::activeWindow();
+	ConfigurationEditDialog dlg(*info, parent ? parent : this);
 	dlg.setWindowTitle(tr("Edit game config"));
 	connect(&dlg, &ConfigurationEditDialog::PreviewControllerColor, this,
 	        &ConfigurationListWidget::PreviewControllerColor);
@@ -878,7 +879,8 @@ void ConfigurationListWidget::edit_global_settings() {
 	info.controller = m_global_info.controller;
 	info.name = tr("Global settings");
 
-	ConfigurationEditDialog dlg(info, this);
+	auto* parent = isVisible() ? window() : QApplication::activeWindow();
+	ConfigurationEditDialog dlg(info, parent ? parent : this);
 	dlg.setWindowTitle(tr("Global settings"));
 	dlg.SetGlobalSettings(m_game_dirs, m_addons_dir);
 	connect(&dlg, &ConfigurationEditDialog::PreviewControllerColor, this,
