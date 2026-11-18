@@ -3,7 +3,7 @@ name: Build and Release KytyPS5
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master, perf-b7012cf-profiling, perf-console-home ]
+    branches: [ main, master, perf-b7012cf-profiling, perf-console-home, perf-readback-breakdown ]
   pull_request:
 
 concurrency:

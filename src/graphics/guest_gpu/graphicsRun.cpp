@@ -102,11 +102,17 @@ void GuestGpu::SendCommandSync(Common::UniqueFunction<void>&& command) {
 		return;
 	}
 	std::binary_semaphore done {0};
-	SendCommand([operation = std::move(command), &done]() mutable {
-		operation();
-		done.release();
-	});
-	done.acquire();
+	{
+		KYTY_PROFILER_BLOCK("GpuCommandSync::Queue");
+		SendCommand([operation = std::move(command), &done]() mutable {
+			operation();
+			done.release();
+		});
+	}
+	{
+		KYTY_PROFILER_BLOCK("GpuCommandSync::Wait");
+		done.acquire();
+	}
 }
 
 void GuestGpu::Submit(std::span<const uint32_t> commands) {

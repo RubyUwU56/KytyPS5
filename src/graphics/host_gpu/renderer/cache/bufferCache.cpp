@@ -153,6 +153,7 @@ void BufferCache::DeleteBuffer(BufferId id) {
 
 template <bool async>
 bool BufferCache::DownloadBufferMemory(Buffer& buffer, uint64_t vaddr, uint64_t size) {
+	KYTY_PROFILER_BLOCK("BufferReadback::Download");
 	std::vector<vk::BufferCopy> copies;
 	uint64_t                    total_size     = 0;
 	const auto                  buffer_address = buffer.CpuAddress();
@@ -207,6 +208,7 @@ bool BufferCache::DownloadBufferMemory(Buffer& buffer, uint64_t vaddr, uint64_t 
 	                       {}, 0, nullptr, 1, &after, 0, nullptr);
 	auto publish = [total_size, buffer_address, copies = std::move(copies),
 	                download = std::move(download)] {
+		KYTY_PROFILER_BLOCK("BufferReadback::Publish");
 		download.buffer->Invalidate(download.offset, total_size);
 		for (const auto& copy: copies) {
 			Libs::LibKernel::Memory::WriteBacking(
@@ -218,8 +220,14 @@ bool BufferCache::DownloadBufferMemory(Buffer& buffer, uint64_t vaddr, uint64_t 
 		m_scheduler.DeferPriorityOperation(std::move(publish));
 	} else {
 		const auto tick = m_scheduler.CurrentTick();
-		m_scheduler.Wait(tick);
-		m_scheduler.WaitPriorityOperations(tick);
+		{
+			KYTY_PROFILER_BLOCK("BufferReadback::WaitGpu");
+			m_scheduler.Wait(tick);
+		}
+		{
+			KYTY_PROFILER_BLOCK("BufferReadback::WaitPriority");
+			m_scheduler.WaitPriorityOperations(tick);
+		}
 		publish();
 	}
 	return true;
@@ -283,12 +291,14 @@ void BufferCache::InvalidateMemory(uint64_t vaddr, uint64_t size) {
 }
 
 void BufferCache::ReadMemory(uint64_t vaddr, uint64_t size, bool is_write) {
+	KYTY_PROFILER_BLOCK("BufferReadback::Caller");
 	if (!GuestGpu::IsGpuThread() && CommandScheduler::InDeferredOperation()) {
 		EXIT("unsupported buffer readback from an asynchronous GPU completion, "
 		     "addr=0x%016" PRIx64 " size=0x%016" PRIx64 "\n",
 		     vaddr, size);
 	}
 	m_scheduler.Context().GetGpu().SendCommandSync([this, vaddr, size, is_write] {
+		KYTY_PROFILER_BLOCK("BufferReadback::Execute");
 		if (is_write && !IsRegionRegistered(vaddr, size)) {
 			return;
 		}
