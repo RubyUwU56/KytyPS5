@@ -239,6 +239,11 @@ void ConsoleHome::SendKey(int key) {
 void ConsoleHome::PollController() {
 	if (m_running) return;
 	const auto pressed = m_controller->Pressed();
+	if (QApplication::applicationState() != Qt::ApplicationActive) {
+		m_pressed = pressed;
+		m_last_direction = 0;
+		return;
+	}
 	auto* active = QApplication::activeWindow();
 	if (active != this && active != m_launcher && !QApplication::activeModalWidget()) {
 		m_pressed = pressed;
@@ -263,6 +268,8 @@ void ConsoleHome::PollController() {
 }
 
 bool ConsoleHome::eventFilter(QObject* watched, QEvent* event) {
+	if (watched == this && event->type() == QEvent::WindowActivate && !m_running)
+		m_controller->SetPreviewEnabled(true);
 	if (watched == m_launcher && event->type() == QEvent::Close) {
 		m_launcher->hide();
 		event->ignore();

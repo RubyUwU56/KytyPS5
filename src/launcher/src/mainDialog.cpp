@@ -574,7 +574,8 @@ void MainDialogPrivate::Run(const QString& activity) {
 void MainDialogPrivate::Update() {
 	const auto* item = m_ui->widget->GetSelectedItem();
 
-	bool run_enabled = item != nullptr && !item->IsRunning() && !m_update_checker->IsInstalling();
+	bool run_enabled = !m_interpreter.isEmpty() && item != nullptr && !item->IsRunning() &&
+	                   !m_update_checker->IsInstalling();
 
 	if (run_enabled) {
 		const auto& info = item->GetInfo();
