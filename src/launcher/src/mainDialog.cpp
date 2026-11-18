@@ -13,6 +13,7 @@
 #include <QByteArray>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
@@ -442,8 +443,22 @@ void MainDialog::RunInterpreter(QProcess* process, const Configuration& info, bo
 		// Track the emulator itself: a persistent cmd /K would prevent returning Home.
 		if (!info.fullscreen_enabled) args << QStringLiteral("--fullscreen");
 		process->setArguments(args);
-		process->setWorkingDirectory(QFileInfo(interpreter).absolutePath());
-		process->setProcessChannelMode(QProcess::ForwardedChannels);
+		const auto interpreterDir = QFileInfo(interpreter).absolutePath();
+		process->setWorkingDirectory(interpreterDir);
+		// GUI launchers may have no stdout handle. Preserve fatal diagnostics even with
+		// quiet emulator logging, and keep each session so a restart cannot erase a crash.
+		QDir logDir(QDir(interpreterDir).filePath(QStringLiteral("_SessionLogs")));
+		if (!logDir.exists() && !QDir().mkpath(logDir.absolutePath())) {
+			logDir = QDir(interpreterDir);
+		}
+		const auto logName = QStringLiteral("session-%1-%2.txt")
+		                         .arg(QDateTime::currentDateTimeUtc().toString(
+		                             QStringLiteral("yyyyMMdd-HHmmss-zzz")))
+		                         .arg(QCoreApplication::applicationPid());
+		const auto logPath = logDir.filePath(logName);
+		process->setProperty("sessionLogPath", logPath);
+		process->setProcessChannelMode(QProcess::MergedChannels);
+		process->setStandardOutputFile(logPath);
 		process->start();
 		return;
 	}
@@ -558,7 +573,19 @@ void MainDialogPrivate::Run(const QString& activity) {
 		emit m_main_dialog->GameRunningChanged(m_running_games > 0);
 		process->deleteLater();
 	};
-	connect(process, &QProcess::finished, this, [finish](int, QProcess::ExitStatus) { finish(); });
+	connect(process, &QProcess::finished, this, [process, finish](int exitCode, QProcess::ExitStatus status) {
+		const auto logPath = process->property("sessionLogPath").toString();
+		if (!logPath.isEmpty()) {
+			QFile log(logPath);
+			if (log.open(QIODevice::Append)) {
+				log.write(QStringLiteral("\n--- Emulator exit ---\nexit_code=%1 exit_status=%2\n")
+				              .arg(exitCode)
+				              .arg(static_cast<int>(status))
+				              .toUtf8());
+			}
+		}
+		finish();
+	});
 	connect(process, &QProcess::errorOccurred, this, [this, process, finish](QProcess::ProcessError error) {
 		if (error != QProcess::FailedToStart) return;
 		finish();
