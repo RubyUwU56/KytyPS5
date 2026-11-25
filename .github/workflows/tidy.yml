@@ -1,0 +1,80 @@
+name: Static analysis (clang-tidy)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ perf-tidy-scan ]
+
+jobs:
+  tidy:
+    name: clang-tidy scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          llvm_version=23
+          curl -fsSL --retry 3 https://apt.llvm.org/llvm-snapshot.gpg.key |
+            sudo tee /etc/apt/keyrings/llvm.asc > /dev/null
+          echo "deb [signed-by=/etc/apt/keyrings/llvm.asc] https://apt.llvm.org/noble/ llvm-toolchain-noble-$llvm_version main" |
+            sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes \
+            "clang-$llvm_version" "lld-$llvm_version" "llvm-$llvm_version" \
+            "clang-tidy-$llvm_version" "clang-tools-$llvm_version" \
+            glslang-tools libasound2-dev libdbus-1-dev libgl1-mesa-dev libpulse-dev \
+            libudev-dev libwayland-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev \
+            libxi-dev libxkbcommon-dev libxrandr-dev libxss-dev libxtst-dev pkg-config \
+            wayland-protocols ninja-build
+          echo "/usr/lib/llvm-$llvm_version/bin" >> "$GITHUB_PATH"
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B _Build/tidy -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DKYTY_BUILD_LAUNCHER=OFF \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build emulator (generates headers)
+        shell: bash
+        run: cmake --build _Build/tidy --target kyty_emulator --parallel
+
+      - name: Run clang-tidy
+        shell: bash
+        run: |
+          checks='-*,clang-analyzer-*,-clang-analyzer-optin.*,-clang-analyzer-cplusplus.NewDeleteLeaks,bugprone-*,-bugprone-easily-swappable-parameters,-bugprone-narrowing-conversions,-bugprone-implicit-widening-of-multiplication-result,-bugprone-reserved-identifier,-bugprone-macro-parentheses,-bugprone-branch-clone,-bugprone-switch-missing-default-case,-bugprone-throw-keyword-missing,concurrency-thread-canceltype-asynchronous,cert-err33-c,performance-move-const-arg,performance-unnecessary-copy-initialization'
+          run-clang-tidy -p _Build/tidy -j "$(nproc)" -quiet \
+            -checks="$checks" -header-filter='.*/src/.*' \
+            '.*/src/(?!launcher/|updater/).*\.cpp$' > tidy.log 2>&1 || true
+          grep -E '^/.*/src/.*: (warning|error): ' tidy.log | sed "s#^$GITHUB_WORKSPACE/##" | sort -u > findings.txt || true
+          {
+            echo "## clang-tidy findings: $(wc -l < findings.txt)"
+            echo
+            echo '### Per check'
+            echo '```'
+            sed -E 's/.*\[([^]]+)\]$/\1/' findings.txt | sort | uniq -c | sort -rn
+            echo '```'
+            echo
+            echo '### All findings'
+            echo '```'
+            head -c 900000 findings.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-tidy-results
+          path: |
+            tidy.log
+            findings.txt
